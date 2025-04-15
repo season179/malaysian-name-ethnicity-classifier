@@ -111,44 +111,70 @@ async function main() {
             inputFile,
             outputFile,
             batchSize,
-            transformFn: async (row) => {
-                const ruleResult = classifyByNameRules(row.fullName);
-                if (ruleResult && ruleResult.confidence >= 0.85) {
-                    return {
-                        ...row,
-                        inferredRace:
-                            ruleResult.predictedEthnicity as typeof import("./schemas").EthnicityEnumSchema._type,
-                    };
-                }
-                // Fallback to LLM
-                const apiKey = process.env.OPENROUTER_API_KEY || "";
-                const model = process.env.MODEL_NAME || "openai/gpt-4.1-nano";
-                const llmResult = await classifyNameWithLLM(
-                    row.fullName,
-                    model,
-                    apiKey
-                );
-                if (
-                    "predictedEthnicity" in llmResult &&
-                    typeof llmResult.predictedEthnicity === "string"
-                ) {
-                    return {
-                        ...row,
-                        inferredRace:
-                            llmResult.predictedEthnicity as typeof import("./schemas").EthnicityEnumSchema._type,
-                    };
-                } else {
-                    // LLM error fallback
-                    return {
-                        ...row,
-                        inferredRace:
-                            "Uncertain" as typeof import("./schemas").EthnicityEnumSchema._type,
-                    };
-                }
-            },
+            // Batch transformFn: processes a batch of rows at once
+            transformFn: undefined, // will override below
             onProgress: (count) => {
                 processed = count;
                 printProgress();
+            },
+            // --- Custom batch transform logic ---
+            async batchTransformFn(batch) {
+                const apiKey = process.env.OPENROUTER_API_KEY || "";
+                const model = process.env.MODEL_NAME || "openai/gpt-4.1-nano";
+                // 1. Apply rule-based classifier
+                const results: any[] = [];
+                const toLLM: { row: any; idx: number }[] = [];
+                batch.forEach((row, idx) => {
+                    const ruleResult = classifyByNameRules(row.fullName);
+                    if (ruleResult && ruleResult.confidence >= 0.85) {
+                        results[idx] = {
+                            ...row,
+                            inferredRace:
+                                ruleResult.predictedEthnicity as typeof import("./schemas").EthnicityEnumSchema._type,
+                        };
+                    } else {
+                        toLLM.push({ row, idx });
+                    }
+                });
+                // Logging: batch info
+                console.log(`\n[Batch] Processing batch of ${batch.length} rows (${toLLM.length} to LLM, ${batch.length - toLLM.length} by rules)`);
+                if (toLLM.length > 0) {
+                    const names = toLLM.map(({ row }) => row.fullName);
+                    console.log(`[LLM] Sending ${names.length} names to LLM:`, names);
+                    const start = Date.now();
+                    const llmResults = await (
+                        await import("./llm-client")
+                    ).classifyNamesWithLLMBatch(names, model, apiKey);
+                    const elapsed = ((Date.now() - start) / 1000).toFixed(2);
+                    console.log(`[LLM] LLM batch result received in ${elapsed}s`);
+                    if (Array.isArray(llmResults)) {
+                        toLLM.forEach(({ row, idx }, i) => {
+                            const llm = llmResults[i];
+                            results[idx] = {
+                                ...row,
+                                inferredRace:
+                                    llm &&
+                                    typeof llm.predictedEthnicity === "string"
+                                        ? (llm.predictedEthnicity as typeof import("./schemas").EthnicityEnumSchema._type)
+                                        : "Uncertain",
+                            };
+                        });
+                    } else {
+                        // LLM batch error: mark all as Uncertain
+                        console.warn(`[LLM] LLM batch error:`, llmResults.error || llmResults);
+                        toLLM.forEach(({ row, idx }) => {
+                            results[idx] = {
+                                ...row,
+                                inferredRace:
+                                    "Uncertain" as typeof import("./schemas").EthnicityEnumSchema._type,
+                            };
+                        });
+                    }
+                } else {
+                    console.log(`[Batch] All rows classified by rules, no LLM call needed.`);
+                }
+                // Return in original order
+                return results;
             },
         });
         printSummary();

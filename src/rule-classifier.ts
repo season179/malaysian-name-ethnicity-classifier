@@ -62,7 +62,7 @@ function detectMalay(sanitized: string): { match: boolean; confidence: number; r
  * Detects if a name is likely Indian based on patronymics and common names
  */
 function detectIndian(sanitized: string): { match: boolean; confidence: number; reasoning: string } {
-  if (/\b(a\/l|a\/p)\b/.test(sanitized)) {
+  if (/\b(a\s*\/\s*l|a\s*\/\s*p)\b/i.test(sanitized)) {
     return {
       match: true,
       confidence: 0.98,
