@@ -49,8 +49,8 @@ export const OutputCsvRowSchema = InputCsvRowSchema.extend({
  * Schema for runtime configuration loaded from environment variables
  */
 export const ConfigSchema = z.object({
-  OPENAI_API_KEY: z.string().min(1, 'OPENAI_API_KEY is required'),
-  MODEL_NAME: z.string().default('gpt-3.5-turbo'),
+  OPENROUTER_API_KEY: z.string().min(1, 'OPENROUTER_API_KEY is required'),
+  MODEL_NAME: z.string().default('openai/gpt-4.1-nano'),
   CONFIDENCE_THRESHOLD: z
     .preprocess((v) => typeof v === 'string' ? parseFloat(v) : v, z.number().min(0).max(1))
     .default(0.7),

@@ -3,6 +3,8 @@ import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import { ConfigSchema } from './schemas';
 import { processCsvPipeline } from './csv-processor';
+import { classifyByNameRules } from './rule-classifier';
+import { classifyNameWithLLM } from './llm-client';
 import path from 'path';
 
 // Load environment variables
@@ -94,7 +96,22 @@ async function main() {
       inputFile,
       outputFile,
       batchSize,
-      transformFn: (row) => ({ ...row, inferredRace: 'Uncertain' }), // Replace with real logic
+      transformFn: async (row) => {
+        const ruleResult = classifyByNameRules(row.fullName);
+        if (ruleResult && ruleResult.confidence >= 0.85) {
+          return { ...row, inferredRace: ruleResult.predictedEthnicity as typeof import('./schemas').EthnicityEnumSchema._type };
+        }
+        // Fallback to LLM
+        const apiKey = process.env.OPENROUTER_API_KEY || '';
+        const model = process.env.MODEL_NAME || 'openai/gpt-4.1-nano';
+        const llmResult = await classifyNameWithLLM(row.fullName, model, apiKey);
+        if ('predictedEthnicity' in llmResult && typeof llmResult.predictedEthnicity === 'string') {
+          return { ...row, inferredRace: (llmResult.predictedEthnicity as typeof import('./schemas').EthnicityEnumSchema._type) };
+        } else {
+          // LLM error fallback
+          return { ...row, inferredRace: 'Uncertain' as typeof import('./schemas').EthnicityEnumSchema._type };
+        }
+      },
       onProgress: (count) => {
         processed = count;
         printProgress();
