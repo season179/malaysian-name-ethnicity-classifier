@@ -36,7 +36,8 @@
   "module": "index.ts",
   "private": true,
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "vitest": "^3.1.1"
   },
   "peerDependencies": {
     "typescript": "^5"
