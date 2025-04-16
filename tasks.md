@@ -110,49 +110,28 @@
 
 # Phase 3: AI Classifier Integration
 
-- [ ] Setup PydanticAI & OpenAI:
-
-    - [ ] Ensure OpenAI API key is in .env and loaded correctly.
-
-    - [ ] Review PydanticAI documentation for OpenAI integration.
-
-- [ ] Define AI Output Structure:
-
-    - [ ] Using Pydantic (from pydantic import BaseModel, Literal), define class EthnicityPrediction(BaseModel): ethnicity: Literal['Malay', 'Chinese', 'Indian', 'Uncertain'].
-
-- [ ] AI Classification Function:
-
-    - [ ] Create classify_batch_ai(name_batch: list[str]) -> list[str]:
-
-        - [ ] Initialize PydanticAI OpenAI client (Instructor(OpenAI(api_key=...))) with model gpt-4.1-2025-04-14.
-
-        - [ ] Prepare the prompt carefully (e.g., "Classify the likely Malaysian ethnicity (Malay, Chinese, Indian, or Uncertain) for each name: {names}").
-
-        - [ ] Call the client's method (e.g., .chat.completions.create) using the prompt and response_model=EthnicityPrediction. Handle potential list responses if classifying multiple names in one call is supported effectively by PydanticAI for this task, otherwise, loop through names individually within the batch (simpler to start).
-
-        - [ ] Implement basic error handling (try-except for API errors, connection issues). Log errors.
-
-        - [ ] Implement a simple retry mechanism (e.g., retry once or twice on failure with a short delay).
-
-        - [ ] Return a list of predicted ethnicities (strings).
-
-- [ ] Batching Logic:
-
-    - [ ] In main.py, identify rows where ethnicity is 'Uncertain'.
-
-    - [ ] Get the list of fullName values for these rows and their original indices.
-
-    - [ ] Split the list into batches (e.g., size 10-20, make size configurable via config.py or constant).
-
-- [ ] Integrate AI Calls:
-
-    - [ ] Loop through the batches.
-
-    - [ ] For each batch, call classify_batch_ai().
-
-    - [ ] Map the results back to the main DataFrame using the indices saved earlier. Update the ethnicity column. Handle cases where AI fails for a batch (e.g., keep as 'Uncertain', log error).
-
-    - [ ] Commit changes (git commit -m "Integrate AI classifier").
+- [x] Setup PydanticAI & OpenAI:
+    - [x] Ensure OpenAI API key is in .env and loaded correctly.
+    - [x] Review PydanticAI documentation for OpenAI integration.
+- [x] Define AI Output Structure:
+    - [x] Using Pydantic (from pydantic import BaseModel, Literal), define class EthnicityPrediction(BaseModel): ethnicity: Literal['Malay', 'Chinese', 'Indian', 'Uncertain'].
+- [x] AI Classification Function:
+    - [x] Create classify_batch_ai(name_batch: list[str]) -> list[str]:
+        - [x] Initialize PydanticAI OpenAI client (Instructor(OpenAI(api_key=...))) with model gpt-4.1-2025-04-14.
+        - [x] Prepare the prompt carefully (e.g., "Classify the likely Malaysian ethnicity (Malay, Chinese, Indian, or Uncertain) for each name: {names}").
+        - [x] Call the client's method (e.g., .chat.completions.create) using the prompt and response_model=EthnicityPrediction. Handle potential list responses if classifying multiple names in one call is supported effectively by PydanticAI for this task, otherwise, loop through names individually within the batch (simpler to start). -> Decided on batching.
+        - [x] Implement basic error handling (try-except for API errors, connection issues). Log errors.
+        - [x] Implement a simple retry mechanism (e.g., retry once or twice on failure with a short delay). -> Used tenacity.
+        - [x] Return a list of predicted ethnicities (strings).
+- [x] Batching Logic:
+    - [x] In main.py, identify rows where ethnicity is 'Uncertain'.
+    - [x] Get the list of fullName values for these rows and their original indices.
+    - [x] Split the list into batches (e.g., size 10-20, make size configurable via config.py or constant).
+- [x] Integrate AI Calls:
+    - [x] Loop through the batches.
+    - [x] For each batch, call classify_batch_ai().
+    - [x] Map the results back to the main DataFrame using the indices saved earlier. Update the ethnicity column. Handle cases where AI fails for a batch (e.g., keep as 'Uncertain', log error).
+    - [x] Commit changes (git commit -m "Integrate AI classifier").
 
 # Phase 4: Integration & Concurrent Output
 

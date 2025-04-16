@@ -1,5 +1,50 @@
 import re
-from config import MALAYSIAN_CHINESE_SURNAMES
+import os
+from dotenv import load_dotenv
+from pydantic import BaseModel, Field
+from pydantic_ai import Instructor
+from openai import OpenAI
+import logging
+from typing import List, Literal
+from config import MALAYSIAN_CHINESE_SURNAMES, OPENAI_MODEL_NAME
+from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Load environment variables
+load_dotenv()
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+if not OPENAI_API_KEY:
+    logging.error("OPENAI_API_KEY not found in .env file.")
+    # Decide handling: raise error or allow non-AI operation
+    # raise ValueError("OPENAI_API_KEY is essential for AI classification.")
+
+# --- Pydantic Models for AI --- START
+# Define the expected output structure for a single name
+class EthnicityPrediction(BaseModel):
+    original_name: str = Field(..., description="The original name provided in the input list.")
+    ethnicity: Literal['Malay', 'Chinese', 'Indian', 'Uncertain'] = Field(..., description="The predicted ethnicity for the name.")
+
+# Define the expected output structure for a batch of names
+class BatchNameEthnicityPrediction(BaseModel):
+    predictions: List[EthnicityPrediction] = Field(..., description="A list of ethnicity predictions, one for each name in the input batch.")
+# --- Pydantic Models for AI --- END
+
+# --- AI Client Initialization --- START
+client = None
+instructor = None
+if OPENAI_API_KEY:
+    try:
+        client = OpenAI(api_key=OPENAI_API_KEY)
+        instructor = Instructor(client)
+        logging.info("OpenAI client and PydanticAI instructor initialized successfully.")
+    except Exception as e:
+        logging.error(f"Failed to initialize OpenAI client: {e}")
+else:
+    logging.warning("OpenAI client not initialized due to missing API key. AI classification will be skipped.")
+# --- AI Client Initialization --- END
 
 def normalize_name(name: str) -> str:
     """
@@ -104,3 +149,50 @@ def classify_ethnicity_rules(full_name: str) -> str:
         return "Chinese"
 
     return "Uncertain"
+
+# Decorator for retrying the API call on specific exceptions
+# Retries 2 times after the first failure, waiting 2 seconds between attempts
+@retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
+def classify_batch_ai(name_batch: List[str]) -> List[str]:
+    """Classifies a batch of names using a single OpenAI API call via PydanticAI."""
+    if not instructor or not client:
+        logging.error("AI Instructor/Client not available. Skipping AI classification for batch.")
+        return ["Uncertain"] * len(name_batch) # Return 'Uncertain' for all names in the batch
+
+    # Construct the prompt for batch processing
+    # Prepare names for the prompt, e.g., numbered list
+    formatted_names = "\n".join([f"{i+1}. {name}" for i, name in enumerate(name_batch)])
+    # Corrected multi-line f-string definition
+    prompt = (
+        f"You are an expert in Malaysian Naming Conventions. Based on typical patterns, "
+        f"classify the likely ethnicity (Malay, Chinese, Indian, or Uncertain) for EACH name in the following list.\n"
+        f"Provide the result as a list of predictions, ensuring each prediction includes the original name and its corresponding ethnicity.\n"
+        f"The number of predictions in your response MUST match the number of names in the input list ({len(name_batch)} names).\n\n"
+        f"Input Names:\n{formatted_names}"
+    )
+
+    try:
+        logging.info(f"Sending batch of {len(name_batch)} names to AI model {OPENAI_MODEL_NAME}...")
+        response: BatchNameEthnicityPrediction = instructor.chat.completions.create(
+            model=OPENAI_MODEL_NAME,
+            response_model=BatchNameEthnicityPrediction,
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        # Validate response
+        if len(response.predictions) != len(name_batch):
+            logging.error(f"AI response length mismatch: Expected {len(name_batch)}, Got {len(response.predictions)}. Names: {name_batch}")
+            # Fallback: Return 'Uncertain' for all names in this batch
+            return ["Uncertain"] * len(name_batch)
+
+        # Extract ethnicities in the correct order (assuming AI respects the order)
+        # We could add a check here to match original_name if needed, but let's trust the AI for now
+        results = [pred.ethnicity for pred in response.predictions]
+        logging.info("Successfully received and parsed AI results for batch.")
+        return results
+
+    except Exception as e:
+        logging.error(f"Error during AI batch classification for names {name_batch}: {e}")
+        # Exception might be raised by tenacity after retries fail
+        # Fallback: Return 'Uncertain' for all names in this batch
+        return ["Uncertain"] * len(name_batch)

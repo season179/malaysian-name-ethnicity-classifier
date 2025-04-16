@@ -4,12 +4,17 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
-# You can now access environment variables using os.getenv()
-# Example:
-# OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+# --- OpenAI Configuration ---
+# Load from environment variable or use default
+OPENAI_MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4.1-2025-04-14")
+# Load batch size from environment variable, default to 10, ensure it's an integer
+try:
+    BATCH_SIZE = int(os.getenv("BATCH_SIZE", 10))
+except ValueError:
+    print("Warning: BATCH_SIZE in .env is not a valid integer. Defaulting to 10.")
+    BATCH_SIZE = 10
 
-# Add other configuration settings or functions as needed
-
+# --- Rule-Based Configuration ---
 # Initial list of common Malaysian/Singaporean Chinese surnames (Romanized)
 # Based on Singapore data (Wikipedia) as a starting point.
 MALAYSIAN_CHINESE_SURNAMES = [
