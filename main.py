@@ -1,6 +1,6 @@
 import pandas as pd
 import sys  # To exit if file loading fails
-
+from classifiers import classify_ethnicity_rules
 
 def load_csv(filepath: str) -> pd.DataFrame | None:
     """
@@ -58,7 +58,7 @@ def save_csv(dataframe: pd.DataFrame, filepath: str):
 if __name__ == "__main__":
     # Define input and output file paths
     INPUT_FILE = "example-source-file.csv"  # Using the provided example
-    OUTPUT_FILE = "output/initial_output.csv"  # Define an output file path
+    OUTPUT_FILE = "output/rule_based_output.csv"  # Define an output file path
 
     print("Starting script execution...")
     print(f"Input file: {INPUT_FILE}")
@@ -67,10 +67,18 @@ if __name__ == "__main__":
     df = load_csv(INPUT_FILE)
 
     if df is not None:
-        # --- Placeholder: Add data processing steps here --- #
-        print("Data loaded. Placeholder for processing steps.")
-        # For now, we just save the loaded data directly.
-        # --- End Processing Placeholder --- #
+        # --- Apply Rule-Based Classifier --- #
+        print("Applying rule-based ethnicity classifier...")
+        # Check if 'fullName' column exists
+        if 'fullName' not in df.columns:
+            print(f"Error: 'fullName' column not found in {INPUT_FILE}", file=sys.stderr)
+            sys.exit(1)
+
+        # Apply the classification function to the 'fullName' column
+        # Handle potential NaN values in fullName by filling with an empty string first
+        df['ethnicity'] = df['fullName'].fillna('').astype(str).apply(classify_ethnicity_rules)
+        print("Classification complete.")
+        # --- End Classification --- #
 
         save_csv(df, OUTPUT_FILE)
 

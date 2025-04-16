@@ -68,45 +68,45 @@
 
 # Phase 2: Rule-Based Classifier Implementation
 
-- [ ] Name Normalization:
+- [x] Name Normalization:
 
-    - [ ] Create a function normalize_name(name): converts to uppercase, strips extra whitespace.
+    - [x] Create a function normalize_name(name): converts to uppercase, strips extra whitespace.
 
-- [ ] Classifier Logic:
+- [x] Classifier Logic:
 
-    - [ ] Malay: Create is_malay(normalized_name) checking for " BIN " or " BINTI ". (Consider adding other markers like "Haji" later if needed).
+    - [x] Malay: Create is_malay(normalized_name) checking for " BIN " or " BINTI ". (Consider adding other markers like "Haji" later if needed).
 
-    - [ ] Indian: Create is_indian(normalized_name) checking for " A/P ", " A/L ", " ANAK ". (Also check for " S/O " or " D/O " as per PRD).
+    - [x] Indian: Create is_indian(normalized_name) checking for " A/P ", " A/L ", " ANAK ". (Also check for " S/O " or " D/O " as per PRD).
 
-    - [ ] Chinese:
+    - [x] Chinese:
 
-        - [ ] Research and compile an initial list of common Malaysian Chinese surnames.
+        - [x] Research and compile an initial list of common Malaysian Chinese surnames.
 
-        - [ ] Store this list (e.g., in config.py or a separate surnames.txt file).
+        - [x] Store this list (e.g., in config.py or a separate surnames.txt file).
 
-        - [ ] Create is_chinese(normalized_name, surname_list) checking if any surname exists as a whole word. (Consider fuzzy matching like Levenshtein distance later for variations like "Chew/Chow", but start simple).
+        - [x] Create is_chinese(normalized_name, surname_list) checking if any surname exists as a whole word. (Consider fuzzy matching like Levenshtein distance later for variations like "Chew/Chow", but start simple).
 
-- [ ] Main Rule Classifier Function:
+- [x] Main Rule Classifier Function:
 
-    - [ ] Create classify_ethnicity_rules(full_name, chinese_surname_list):
+    - [x] Create classify_ethnicity_rules(full_name, chinese_surname_list):
 
-        - [ ] Call normalize_name().
+        - [x] Call normalize_name().
 
-        - [ ] Apply rules in order: is_malay(), is_indian(), is_chinese(). Return ethnicity if matched.
+        - [x] Apply rules in order: is_malay(), is_indian(), is_chinese(). Return ethnicity if matched.
 
-        - [ ] If no match, return "Uncertain".
+        - [x] If no match, return "Uncertain".
 
-- [ ] Integrate into Main Script:
+- [x] Integrate into Main Script:
 
-    - [ ] Modify main.py to apply classify_ethnicity_rules() to each row's fullName.
+    - [x] Modify main.py to apply classify_ethnicity_rules() to each row's fullName.
 
-    - [ ] Add a new ethnicity column to the DataFrame.
+    - [x] Add a new ethnicity column to the DataFrame.
 
-    - [ ] Update the save_csv() call to save the DataFrame with the new column.
+    - [x] Update the save_csv() call to save the DataFrame with the new column.
 
-    - [ ] Test with sample data covering all rule categories and 'Uncertain'.
+    - [x] Test with sample data covering all rule categories and 'Uncertain'.
 
-    - [ ] Commit changes (git commit -m "Implement rule-based classifier").
+    - [x] Commit changes (git commit -m "Implement rule-based classifier").
 
 # Phase 3: AI Classifier Integration
 
