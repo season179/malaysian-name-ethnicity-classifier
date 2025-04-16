@@ -89,19 +89,30 @@ def main(input_file, output_file):
             batch_results = classify_batch_ai(batch_names)
             ai_results.extend(batch_results)
 
-        # Update DataFrame with AI results
-        if len(ai_results) == len(uncertain_indices):
-            df.loc[uncertain_indices, 'ethnicity'] = ai_results
-            logging.info("AI classification complete. Updated DataFrame with AI results.")
+            # --- Frequent Save Logic (Phase 4) ---
+            # Update the portion of the DataFrame processed in this batch
+            if len(batch_results) == len(batch_names):
+                current_indices = uncertain_indices[i:i + len(batch_names)]
+                df.loc[current_indices, 'ethnicity'] = batch_results
+                logging.debug(f"Updated DataFrame for batch {i // BATCH_SIZE + 1}. Saving intermediate results.")
+                save_csv(df, output_file) # Save after each batch
+            else:
+                logging.warning(f"AI results length mismatch for batch {i // BATCH_SIZE + 1}. Expected {len(batch_names)}, got {len(batch_results)}. Skipping update and save for this batch.")
+
+        # --- Final Verification & Logging (Optional but good practice) ---
+        final_ai_processed_count = len(ai_results)
+        if final_ai_processed_count == len(uncertain_indices):
+            # Final check: Ensure all uncertain indices were intended to be updated (even if some batches failed individually and weren't updated)
+            logging.info(f"AI classification phase complete. Processed {final_ai_processed_count} uncertain names.")
             logging.info(f"Final results distribution after AI classification:\n{df['ethnicity'].value_counts()}")
         else:
-            # Log error if lengths don't match
-            logging.error(f"Mismatch between number of AI results ({len(ai_results)}) and uncertain names ({len(uncertain_indices)}). AI results not applied consistently.")
+            # Log error if the total counts don't match after the loop
+            logging.error(f"Mismatch between total expected AI results ({len(uncertain_indices)}) and total results received ({final_ai_processed_count}) across all batches. Final output might be incomplete.")
 
-    # --- Save Final Results ---
-    logging.info(f"Saving final results to {output_file}")
-    save_csv(df, output_file)
-    logging.info("Classification process finished.")
+        # --- Save Final Results (Redundant if saving after every batch, but safe) ---
+        logging.info(f"Ensuring final results are saved to {output_file}")
+        save_csv(df, output_file)
+        logging.info("Classification process finished.")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Classify Malaysian names by ethnicity.")
