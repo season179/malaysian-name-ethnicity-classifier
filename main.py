@@ -1,7 +1,7 @@
 import pandas as pd
 import logging
 import argparse
-from config import load_config, MALAYSIAN_CHINESE_SURNAMES, BATCH_SIZE
+from config import BATCH_SIZE
 from classifiers import classify_ethnicity_rules, classify_batch_ai
 
 # Configure logging
@@ -54,7 +54,6 @@ def save_csv(dataframe: pd.DataFrame, filepath: str):
         )
 
 def main(input_file, output_file):
-    load_config()
     logging.info(f"Starting classification process for {input_file}")
 
     df = load_csv(input_file)
@@ -67,10 +66,11 @@ def main(input_file, output_file):
 
     # --- Phase 2: Apply Rule-Based Classifier ---
     logging.info("Applying rule-based classification...")
-    df['ethnicity'] = df['fullName'].apply(lambda name: classify_ethnicity_rules(name, MALAYSIAN_CHINESE_SURNAMES))
+    # Apply rule-based classification
+    # Pass only the name, as classify_ethnicity_rules uses the imported surname list internally
+    df['ethnicity'] = df['fullName'].apply(lambda name: classify_ethnicity_rules(name))
     logging.info("Rule-based classification complete.")
-    # Initial save or logging of counts
-    logging.info(f"Rule-based results:\n{df['ethnicity'].value_counts()}")
+    logging.info(f"Results distribution after rules:\n{df['ethnicity'].value_counts()}")
 
     # --- Phase 3: AI Classification for Uncertain Cases ---
     uncertain_mask = df['ethnicity'] == 'Uncertain'

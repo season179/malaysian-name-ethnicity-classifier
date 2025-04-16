@@ -2,7 +2,7 @@ import re
 import os
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
-from pydantic_ai import Instructor
+import instructor
 from openai import OpenAI
 import logging
 from typing import List, Literal
@@ -34,12 +34,12 @@ class BatchNameEthnicityPrediction(BaseModel):
 
 # --- AI Client Initialization --- START
 client = None
-instructor = None
 if OPENAI_API_KEY:
     try:
         client = OpenAI(api_key=OPENAI_API_KEY)
-        instructor = Instructor(client)
-        logging.info("OpenAI client and PydanticAI instructor initialized successfully.")
+        # Patch the client using the instructor library
+        client = instructor.from_openai(client)
+        logging.info("OpenAI client initialized and patched with instructor successfully.")
     except Exception as e:
         logging.error(f"Failed to initialize OpenAI client: {e}")
 else:
@@ -155,8 +155,8 @@ def classify_ethnicity_rules(full_name: str) -> str:
 @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
 def classify_batch_ai(name_batch: List[str]) -> List[str]:
     """Classifies a batch of names using a single OpenAI API call via PydanticAI."""
-    if not instructor or not client:
-        logging.error("AI Instructor/Client not available. Skipping AI classification for batch.")
+    if not client:
+        logging.error("AI Client not available. Skipping AI classification for batch.")
         return ["Uncertain"] * len(name_batch) # Return 'Uncertain' for all names in the batch
 
     # Construct the prompt for batch processing
@@ -173,7 +173,7 @@ def classify_batch_ai(name_batch: List[str]) -> List[str]:
 
     try:
         logging.info(f"Sending batch of {len(name_batch)} names to AI model {OPENAI_MODEL_NAME}...")
-        response: BatchNameEthnicityPrediction = instructor.chat.completions.create(
+        response: BatchNameEthnicityPrediction = client.chat.completions.create(
             model=OPENAI_MODEL_NAME,
             response_model=BatchNameEthnicityPrediction,
             messages=[{"role": "user", "content": prompt}]
