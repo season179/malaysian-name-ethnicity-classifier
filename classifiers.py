@@ -6,7 +6,7 @@ import instructor
 from openai import OpenAI
 import logging
 from typing import List, Literal
-from config import MALAYSIAN_CHINESE_SURNAMES, OPENAI_MODEL_NAME
+from config import MALAYSIAN_CHINESE_SURNAMES, MODEL_NAME
 from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
 
 # Configure logging
@@ -14,12 +14,14 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # Load environment variables
 load_dotenv()
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+HTTP_REFERER = os.getenv("HTTP_REFERER", "")
+SITE_NAME = os.getenv("SITE_NAME", "")
 
-if not OPENAI_API_KEY:
-    logging.error("OPENAI_API_KEY not found in .env file.")
+if not OPENROUTER_API_KEY:
+    logging.error("OPENROUTER_API_KEY not found in .env file.")
     # Decide handling: raise error or allow non-AI operation
-    # raise ValueError("OPENAI_API_KEY is essential for AI classification.")
+    # raise ValueError("OPENROUTER_API_KEY is essential for AI classification.")
 
 # --- Pydantic Models for AI --- START
 # Define the expected output structure for a single name
@@ -34,16 +36,19 @@ class BatchNameEthnicityPrediction(BaseModel):
 
 # --- AI Client Initialization --- START
 client = None
-if OPENAI_API_KEY:
+if OPENROUTER_API_KEY:
     try:
-        client = OpenAI(api_key=OPENAI_API_KEY)
+        client = OpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=OPENROUTER_API_KEY
+        )
         # Patch the client using the instructor library
         client = instructor.from_openai(client)
-        logging.info("OpenAI client initialized and patched with instructor successfully.")
+        logging.info("OpenRouter client initialized and patched with instructor successfully.")
     except Exception as e:
-        logging.error(f"Failed to initialize OpenAI client: {e}")
+        logging.error(f"Failed to initialize OpenRouter client: {e}")
 else:
-    logging.warning("OpenAI client not initialized due to missing API key. AI classification will be skipped.")
+    logging.warning("OpenRouter client not initialized due to missing API key. AI classification will be skipped.")
 # --- AI Client Initialization --- END
 
 def normalize_name(name: str) -> str:
@@ -154,7 +159,7 @@ def classify_ethnicity_rules(full_name: str) -> str:
 # Retries 2 times after the first failure, waiting 2 seconds between attempts
 @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
 def classify_batch_ai(name_batch: List[str]) -> List[str]:
-    """Classifies a batch of names using a single OpenAI API call via PydanticAI."""
+    """Classifies a batch of names using a single OpenRouter API call via PydanticAI."""
     if not client:
         logging.error("AI Client not available. Skipping AI classification for batch.")
         return ["Uncertain"] * len(name_batch) # Return 'Uncertain' for all names in the batch
@@ -172,11 +177,20 @@ def classify_batch_ai(name_batch: List[str]) -> List[str]:
     )
 
     try:
-        logging.info(f"Sending batch of {len(name_batch)} names to AI model {OPENAI_MODEL_NAME}...")
+        logging.info(f"Sending batch of {len(name_batch)} names to AI model {MODEL_NAME}...")
+        
+        # Prepare optional headers for OpenRouter
+        extra_headers = {}
+        if HTTP_REFERER:
+            extra_headers["HTTP-Referer"] = HTTP_REFERER
+        if SITE_NAME:
+            extra_headers["X-Title"] = SITE_NAME
+        
         response: BatchNameEthnicityPrediction = client.chat.completions.create(
-            model=OPENAI_MODEL_NAME,
+            model=MODEL_NAME,
             response_model=BatchNameEthnicityPrediction,
-            messages=[{"role": "user", "content": prompt}]
+            messages=[{"role": "user", "content": prompt}],
+            extra_headers=extra_headers if extra_headers else None
         )
 
         # Validate response

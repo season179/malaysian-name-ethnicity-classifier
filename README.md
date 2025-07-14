@@ -1,6 +1,6 @@
 # Malaysian Name Ethnicity Classifier
 
-Classifies Malaysian names by ethnicity (Malay, Chinese, Indian, or Uncertain) using rule-based patterns and AI classification.
+Classifies Malaysian names by ethnicity (Malay, Chinese, Indian, or Uncertain) using rule-based patterns and AI classification via OpenRouter.
 
 ## Quick Start
 
@@ -8,7 +8,7 @@ Classifies Malaysian names by ethnicity (Malay, Chinese, Indian, or Uncertain) u
 # Setup
 uv sync
 cp .env.example .env
-# Add your OPENAI_API_KEY to .env
+# Add your OPENROUTER_API_KEY to .env (get from https://openrouter.ai/keys)
 
 # Run classification
 uv run python main.py -i input.csv -o output.csv
@@ -34,25 +34,30 @@ Same CSV with added `ethnicity` column containing: `Malay`, `Chinese`, `Indian`,
    - Chinese: Matches known Chinese surnames list
 
 2. **AI classification** (for uncertain cases):
-   - Uses OpenAI GPT model for ambiguous names
+   - Uses OpenRouter API to access multiple AI models (OpenAI, Anthropic, Google, etc.)
    - Processes in batches to optimize API usage
+   - Automatic fallback and cost optimization
    - Saves results after each batch
 
 ## Configuration
 
 Environment variables in `.env`:
-- `OPENAI_API_KEY`: Required for AI classification
-- `MODEL_NAME`: OpenAI model (default: gpt-4.1-2025-04-14)
+- `OPENROUTER_API_KEY`: Required for AI classification (get from https://openrouter.ai/keys)
+- `MODEL_NAME`: AI model (default: openai/gpt-4.1-mini). Format: provider/model-name
 - `BATCH_SIZE`: AI batch size (default: 10)
+- `HTTP_REFERER`: Optional site URL for OpenRouter analytics
+- `SITE_NAME`: Optional site name for OpenRouter analytics
 
 ## Requirements
 
 - Python 3.11+
-- OpenAI API key (for uncertain name classification)
+- OpenRouter API key (for uncertain name classification)
 - Dependencies managed via `uv`
 
 ## Notes
 
-- Works without OpenAI API key (rule-based only)
+- Works without OpenRouter API key (rule-based only)
+- Access to 400+ AI models through single API
+- Automatic cost optimization and provider fallbacks
 - Results saved incrementally to prevent data loss
 - Manual testing approach as per project requirements

@@ -112,7 +112,11 @@ def main(input_file, output_file):
         # --- Save Final Results (Redundant if saving after every batch, but safe) ---
         logging.info(f"Ensuring final results are saved to {output_file}")
         save_csv(df, output_file)
-        logging.info("Classification process finished.")
+    
+    # --- Save Final Results (always save, regardless of AI processing) ---
+    logging.info(f"Saving final results to {output_file}")
+    save_csv(df, output_file)
+    logging.info("Classification process finished.")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Classify Malaysian names by ethnicity.")

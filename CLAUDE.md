@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 This is a Malaysian name ethnicity classifier that processes CSV files containing employee data and predicts ethnicity (Malay, Chinese, Indian, or Uncertain) based on names. The system uses a two-phase approach:
 
 1. **Rule-based classification**: Fast pattern matching for clear cases
-2. **AI classification**: OpenAI GPT model for uncertain cases using batch processing
+2. **AI classification**: OpenRouter API for uncertain cases using batch processing with access to 400+ AI models
 
 ## Core Architecture
 
@@ -21,8 +21,9 @@ This is a Malaysian name ethnicity classifier that processes CSV files containin
 
 - **`classifiers.py`**: Classification implementations
   - Rule-based classifier using name patterns and surname lists
-  - AI classifier using OpenAI API with instructor/Pydantic validation
+  - AI classifier using OpenRouter API with instructor/Pydantic validation
   - Retry logic with tenacity for API reliability
+  - Automatic fallback and cost optimization via OpenRouter
 
 - **`config.py`**: Configuration and constants
   - Environment variable loading
@@ -34,7 +35,7 @@ This is a Malaysian name ethnicity classifier that processes CSV files containin
 1. Load CSV with `fullName` column
 2. Apply rule-based classification to all names
 3. Collect names marked as "Uncertain" 
-4. Process uncertain names in batches via OpenAI API
+4. Process uncertain names in batches via OpenRouter API
 5. Save results after each batch to prevent data loss
 6. Output CSV with added `ethnicity` column
 
@@ -55,7 +56,7 @@ uv sync
 
 # Copy and configure environment variables
 cp .env.example .env
-# Edit .env to add your OPENAI_API_KEY
+# Edit .env to add your OPENROUTER_API_KEY (get from https://openrouter.ai/keys)
 ```
 
 ### Running the Classifier
@@ -86,14 +87,18 @@ uv sync --upgrade
 ## Configuration
 
 ### Environment Variables
-- `OPENAI_API_KEY`: Required for AI classification
-- `MODEL_NAME`: OpenAI model (default: gpt-4.1-2025-04-14)
+- `OPENROUTER_API_KEY`: Required for AI classification (get from https://openrouter.ai/keys)
+- `MODEL_NAME`: AI model (default: openai/gpt-4.1-mini). Format: provider/model-name
 - `BATCH_SIZE`: AI processing batch size (default: 10)
+- `HTTP_REFERER`: Optional site URL for OpenRouter analytics
+- `SITE_NAME`: Optional site name for OpenRouter analytics
 
 ### Key Configuration Points
 - Chinese surnames list in `config.py:MALAYSIAN_CHINESE_SURNAMES`
 - Batch size affects API costs and processing speed
 - Model selection impacts accuracy vs cost trade-offs
+- OpenRouter provides access to 400+ models from multiple providers
+- Automatic cost optimization and fallback handling
 
 ## Important Implementation Details
 
@@ -101,6 +106,7 @@ uv sync --upgrade
 - Missing API key allows rule-based-only operation
 - Failed AI batches fall back to "Uncertain" classification  
 - Retry logic (3 attempts, 2-second intervals) for API calls
+- OpenRouter automatic fallback when providers are down
 - Graceful handling of non-string names and malformed data
 
 ### Data Persistence

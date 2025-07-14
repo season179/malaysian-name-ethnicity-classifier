@@ -3,7 +3,8 @@
     "allow": [
       "Bash(python:*)",
       "Bash(uv sync:*)",
-      "Bash(uv run:*)"
+      "Bash(uv run:*)",
+      "WebFetch(domain:openrouter.ai)"
     ],
     "deny": []
   }

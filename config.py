@@ -4,9 +4,9 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
-# --- OpenAI Configuration ---
-# Load from environment variable or use default
-OPENAI_MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4.1-2025-04-14")
+# --- AI Model Configuration ---
+# Load from environment variable or use default OpenRouter model
+MODEL_NAME = os.getenv("MODEL_NAME", "openai/gpt-4.1-mini")
 # Load batch size from environment variable, default to 10, ensure it's an integer
 try:
     BATCH_SIZE = int(os.getenv("BATCH_SIZE", 10))
