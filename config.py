@@ -14,6 +14,14 @@ except ValueError:
     print("Warning: BATCH_SIZE in .env is not a valid integer. Defaulting to 10.")
     BATCH_SIZE = 10
 
+# --- Column Detection Configuration ---
+# Confidence threshold for column detection (0.0 to 1.0)
+try:
+    COLUMN_DETECTION_THRESHOLD = float(os.getenv("COLUMN_DETECTION_THRESHOLD", 0.6))
+except ValueError:
+    print("Warning: COLUMN_DETECTION_THRESHOLD in .env is not a valid float. Defaulting to 0.6.")
+    COLUMN_DETECTION_THRESHOLD = 0.6
+
 # --- Rule-Based Configuration ---
 # Initial list of common Malaysian/Singaporean Chinese surnames (Romanized)
 # Based on Singapore data (Wikipedia) as a starting point.

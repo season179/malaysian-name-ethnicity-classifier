@@ -3,6 +3,7 @@ import logging
 import argparse
 from config import BATCH_SIZE
 from classifiers import classify_ethnicity_rules, classify_batch_ai
+from column_detector import detect_name_column
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -53,29 +54,35 @@ def save_csv(dataframe: pd.DataFrame, filepath: str):
             f"An unexpected error occurred while saving to {filepath}: {e}"
         )
 
-def main(input_file, output_file):
+def main(input_file, output_file, manual_column=None):
     logging.info(f"Starting classification process for {input_file}")
 
     df = load_csv(input_file)
     if df is None:
         return # Exit if loading failed
 
-    if 'fullName' not in df.columns:
-        logging.error(f"'fullName' column not found in {input_file}")
+    # Detect name column intelligently
+    try:
+        detection_result = detect_name_column(df, manual_column)
+        name_column = detection_result.detected_column
+        logging.info(f"Detected name column: '{name_column}' (confidence: {detection_result.confidence_score:.2f})")
+        logging.info(f"Detection reasoning: {detection_result.reasoning}")
+    except Exception as e:
+        logging.error(f"Failed to detect name column: {e}")
         return
 
     # --- Phase 2: Apply Rule-Based Classifier ---
     logging.info("Applying rule-based classification...")
     # Apply rule-based classification
     # Pass only the name, as classify_ethnicity_rules uses the imported surname list internally
-    df['ethnicity'] = df['fullName'].apply(lambda name: classify_ethnicity_rules(name))
+    df['ethnicity'] = df[name_column].apply(lambda name: classify_ethnicity_rules(name))
     logging.info("Rule-based classification complete.")
     logging.info(f"Results distribution after rules:\n{df['ethnicity'].value_counts()}")
 
     # --- Phase 3: AI Classification for Uncertain Cases ---
     uncertain_mask = df['ethnicity'] == 'Uncertain'
     uncertain_indices = df.index[uncertain_mask]
-    uncertain_names = df.loc[uncertain_mask, 'fullName'].tolist()
+    uncertain_names = df.loc[uncertain_mask, name_column].tolist()
 
     if not uncertain_names:
         logging.info("No names marked as 'Uncertain'. Skipping AI classification.")
@@ -122,6 +129,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Classify Malaysian names by ethnicity.")
     parser.add_argument("-i", "--input", required=True, help="Path to the input CSV file.")
     parser.add_argument("-o", "--output", required=True, help="Path to the output CSV file.")
+    parser.add_argument("-c", "--column", help="Manually specify the name column (overrides automatic detection).")
     args = parser.parse_args()
 
-    main(args.input, args.output)
+    main(args.input, args.output, args.column)

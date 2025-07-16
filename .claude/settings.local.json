@@ -4,7 +4,8 @@
       "Bash(python:*)",
       "Bash(uv sync:*)",
       "Bash(uv run:*)",
-      "WebFetch(domain:openrouter.ai)"
+      "WebFetch(domain:openrouter.ai)",
+      "Bash(rm:*)"
     ],
     "deny": []
   }

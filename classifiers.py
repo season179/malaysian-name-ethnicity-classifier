@@ -6,6 +6,7 @@ import instructor
 from openai import OpenAI
 import logging
 from typing import List, Literal
+from textwrap import dedent
 from config import MALAYSIAN_CHINESE_SURNAMES, MODEL_NAME
 from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
 
@@ -167,14 +168,18 @@ def classify_batch_ai(name_batch: List[str]) -> List[str]:
     # Construct the prompt for batch processing
     # Prepare names for the prompt, e.g., numbered list
     formatted_names = "\n".join([f"{i+1}. {name}" for i, name in enumerate(name_batch)])
-    # Corrected multi-line f-string definition
-    prompt = (
-        f"You are an expert in Malaysian Naming Conventions. Based on typical patterns, "
-        f"classify the likely ethnicity (Malay, Chinese, Indian, or Uncertain) for EACH name in the following list.\n"
-        f"Provide the result as a list of predictions, ensuring each prediction includes the original name and its corresponding ethnicity.\n"
-        f"The number of predictions in your response MUST match the number of names in the input list ({len(name_batch)} names).\n\n"
-        f"Input Names:\n{formatted_names}"
-    )
+    
+    prompt = dedent(f"""
+        You are an expert in Malaysian Naming Conventions. Based on typical patterns, 
+        classify the likely ethnicity (Malay, Chinese, Indian, or Uncertain) for EACH name in the following list.
+        
+        Provide the result as a list of predictions, ensuring each prediction includes the original name and its corresponding ethnicity.
+        
+        The number of predictions in your response MUST match the number of names in the input list ({len(name_batch)} names).
+
+        Input Names:
+        {formatted_names}
+    """).strip()
 
     try:
         logging.info(f"Sending batch of {len(name_batch)} names to AI model {MODEL_NAME}...")
