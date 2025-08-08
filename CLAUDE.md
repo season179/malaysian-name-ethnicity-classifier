@@ -4,10 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Malaysian name ethnicity classifier that processes CSV files containing employee data and predicts ethnicity (Malay, Chinese, Indian, or Uncertain) based on names. The system uses a two-phase approach:
+This is an Asian name ethnicity classifier that processes CSV files containing employee data and predicts ethnicity based on names. The system supports Malaysian ethnicities (Malay, Chinese, Indian) as well as other Asian countries (Myanmar, Nepal, Bangladesh). The system uses a multi-phase hybrid cascading approach:
 
-1. **Rule-based classification**: Fast pattern matching for clear cases
-2. **AI classification**: OpenRouter API for uncertain cases using batch processing with access to 400+ AI models
+1. **Rule-based classification**: Fast pattern matching for clear cases with confidence scoring
+2. **AI classification**: OpenRouter API for uncertain cases using batch processing
+3. **Extended rule-based classification**: Additional patterns for Myanmar, Nepal, Bangladesh
+4. **Enhanced AI classification**: Country-specific prompts for remaining uncertain cases
+
+All classifications include confidence scores (0.0-1.0) to indicate prediction reliability.
 
 ## Core Architecture
 
@@ -32,20 +36,31 @@ This is a Malaysian name ethnicity classifier that processes CSV files containin
 
 ### Data Flow
 
-1. Load CSV with `fullName` column
-2. Apply rule-based classification to all names
-3. Collect names marked as "Uncertain" 
-4. Process uncertain names in batches via OpenRouter API
-5. Save results after each batch to prevent data loss
-6. Output CSV with added `ethnicity` column
+1. **Phase 1**: Intelligent column detection to identify name field
+2. **Phase 2**: Rule-based classification with confidence scoring 
+   - Malaysian patterns (Malay, Chinese, Indian)
+   - Extended patterns (Myanmar, Nepal, Bangladesh)
+3. **Phase 3**: AI classification with comprehensive country patterns for uncertain/low-confidence names
+4. Save results after each batch to prevent data loss
+5. Output CSV with added `ethnicity` and `confidence` columns
 
 ### Classification Logic
 
-**Rule-based patterns:**
-- Malay: Contains "BIN" or "BINTI" 
-- Indian: Contains "A/P", "A/L", "ANAK", "S/O", or "D/O"
-- Chinese: Matches surnames in `MALAYSIAN_CHINESE_SURNAMES` list
-- Uncertain: No pattern match
+**Malaysian Rule-based patterns:**
+- Malay: Contains "BIN" or "BINTI" (confidence: 1.0)
+- Indian: Contains "A/P", "A/L", "ANAK", "S/O", or "D/O" (confidence: 0.95)
+- Chinese: Matches surnames in `MALAYSIAN_CHINESE_SURNAMES` list (confidence: 0.85)
+
+**Extended Rule-based patterns:**
+- Myanmar: Honorifics (U, Daw, Saw) + name elements (Aung, Win, Thant) + no surname structure
+- Nepal: Caste-based surnames (Sharma, Shrestha, Thapa, Gurung, etc.)
+- Bangladesh: Islamic patterns + specific surnames (Rahman, Hossain) + female markers (Khatun, Begum)
+
+**Confidence Scoring:**
+- 1.0: Definitive patterns (e.g., BIN/BINTI)
+- 0.8-0.99: Strong indicators
+- 0.6-0.79: Clear patterns with some uncertainty
+- Below 0.6: Marked as "Uncertain"
 
 ## Development Commands
 
@@ -93,8 +108,14 @@ uv sync --upgrade
 - `HTTP_REFERER`: Optional site URL for OpenRouter analytics
 - `SITE_NAME`: Optional site name for OpenRouter analytics
 
+### Additional Configuration Options
+- `MIN_CONFIDENCE_THRESHOLD`: Minimum confidence to accept classification (default: 0.6)
+- `COLUMN_DETECTION_THRESHOLD`: Confidence threshold for automatic column detection (default: 0.6)
+
 ### Key Configuration Points
 - Chinese surnames list in `config.py:MALAYSIAN_CHINESE_SURNAMES`
+- Extended country patterns in `config.py` (Myanmar, Nepal, Bangladesh)
+- Confidence thresholds in `config.py:RULE_BASED_CONFIDENCE`
 - Batch size affects API costs and processing speed
 - Model selection impacts accuracy vs cost trade-offs
 - OpenRouter provides access to 400+ models from multiple providers
@@ -112,7 +133,19 @@ uv sync --upgrade
 ### Data Persistence
 - Results are saved after each AI batch to prevent data loss
 - Original CSV columns are preserved in output
+- New `confidence` column added alongside `ethnicity`
 - Intermediate saves protect against processing interruptions
+
+### Output Format
+The output CSV includes all original columns plus:
+- `ethnicity`: Predicted ethnicity (Malay, Chinese, Indian, Myanmar, Nepal, Bangladesh, Uncertain)
+- `confidence`: Confidence score between 0.0 and 1.0
+
+### Performance Optimization
+- Rule-based classification processes all names first (fastest)
+- AI classification only for uncertain/low-confidence cases
+- Extended AI classification uses smaller batches for better accuracy
+- Confidence thresholds allow filtering results by reliability
 
 ### Testing Strategy
 Manual testing only - no automated test framework per project requirements.

@@ -6,7 +6,15 @@ import instructor
 from openai import OpenAI
 import logging
 from typing import List, Literal
-from config import MALAYSIAN_CHINESE_SURNAMES, MODEL_NAME
+from textwrap import dedent
+from config import (
+    MALAYSIAN_CHINESE_SURNAMES, MODEL_NAME, RULE_BASED_CONFIDENCE,
+    MYANMAR_HONORIFICS, MYANMAR_NAME_ELEMENTS,
+    NEPAL_ALL_SURNAMES, NEPAL_BRAHMIN_SURNAMES, NEPAL_CHHETRI_SURNAMES,
+    NEPAL_NEWAR_SURNAMES, NEPAL_ETHNIC_SURNAMES, NEPAL_DALIT_SURNAMES,
+    BANGLADESH_SURNAMES, BANGLADESH_FEMALE_MARKERS, BANGLADESH_NAME_PREFIXES,
+    MIN_CONFIDENCE_THRESHOLD
+)
 from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
 
 # Configure logging
@@ -27,7 +35,8 @@ if not OPENROUTER_API_KEY:
 # Define the expected output structure for a single name
 class EthnicityPrediction(BaseModel):
     original_name: str = Field(..., description="The original name provided in the input list.")
-    ethnicity: Literal['Malay', 'Chinese', 'Indian', 'Uncertain'] = Field(..., description="The predicted ethnicity for the name.")
+    ethnicity: Literal['Malay', 'Chinese', 'Indian', 'Myanmar', 'Nepal', 'Bangladesh', 'Uncertain'] = Field(..., description="The predicted ethnicity for the name.")
+    confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence score between 0 and 1")
 
 # Define the expected output structure for a batch of names
 class BatchNameEthnicityPrediction(BaseModel):
@@ -155,26 +164,201 @@ def classify_ethnicity_rules(full_name: str) -> str:
 
     return "Uncertain"
 
+def classify_myanmar(normalized_name: str) -> tuple[bool, float]:
+    """
+    Check if name is likely from Myanmar.
+    
+    Args:
+        normalized_name: The uppercase, whitespace-normalized name.
+        
+    Returns:
+        Tuple of (is_myanmar, confidence_score)
+    """
+    parts = normalized_name.split()
+    
+    # Check for honorifics
+    has_honorific = any(part in MYANMAR_HONORIFICS for part in parts)
+    
+    # Count Myanmar name elements
+    element_count = sum(1 for part in parts for elem in MYANMAR_NAME_ELEMENTS if elem == part)
+    
+    # Myanmar names typically don't have surnames and are 1-3 words
+    word_count = len(parts)
+    typical_structure = 1 <= word_count <= 3
+    
+    # Calculate confidence
+    if has_honorific and element_count > 0:
+        return True, RULE_BASED_CONFIDENCE["MYANMAR_FULL_PATTERN"]
+    elif has_honorific and typical_structure:
+        return True, 0.75
+    elif element_count >= 2 and typical_structure:
+        return True, RULE_BASED_CONFIDENCE["MYANMAR_PARTIAL"]
+    elif element_count == 1 and typical_structure and word_count <= 2:
+        return True, 0.65
+    
+    return False, 0.0
+
+def classify_nepal(normalized_name: str) -> tuple[bool, float]:
+    """
+    Check if name is likely from Nepal.
+    
+    Args:
+        normalized_name: The uppercase, whitespace-normalized name.
+        
+    Returns:
+        Tuple of (is_nepal, confidence_score)
+    """
+    parts = normalized_name.split()
+    
+    # Check each part against Nepal surname lists
+    for part in parts:
+        if part in NEPAL_BRAHMIN_SURNAMES or part in NEPAL_CHHETRI_SURNAMES:
+            return True, RULE_BASED_CONFIDENCE["NEPAL_CASTE_SURNAME"]
+        elif part in NEPAL_NEWAR_SURNAMES or part in NEPAL_ETHNIC_SURNAMES:
+            return True, RULE_BASED_CONFIDENCE["NEPAL_CASTE_SURNAME"]
+        elif part in NEPAL_DALIT_SURNAMES:
+            return True, 0.9
+    
+    return False, 0.0
+
+def classify_bangladesh(normalized_name: str) -> tuple[bool, float]:
+    """
+    Check if name is likely from Bangladesh.
+    
+    Args:
+        normalized_name: The uppercase, whitespace-normalized name.
+        
+    Returns:
+        Tuple of (is_bangladesh, confidence_score)
+    """
+    parts = normalized_name.split()
+    
+    # Check for prefixes
+    has_prefix = any(part in BANGLADESH_NAME_PREFIXES for part in parts)
+    
+    # Check for surnames
+    has_surname = any(part in BANGLADESH_SURNAMES for part in parts)
+    
+    # Check for female markers
+    has_female_marker = any(part in BANGLADESH_FEMALE_MARKERS for part in parts)
+    
+    # Calculate confidence based on indicators
+    indicator_count = sum([has_prefix, has_surname, has_female_marker])
+    
+    if indicator_count >= 2:
+        return True, RULE_BASED_CONFIDENCE["BANGLADESH_FULL"]
+    elif has_surname or has_female_marker:
+        return True, 0.8
+    elif has_prefix and len(parts) >= 2:
+        # Common pattern: MD/MOHAMMAD + other names
+        return True, RULE_BASED_CONFIDENCE["BANGLADESH_PARTIAL"]
+    
+    return False, 0.0
+
+def classify_ethnicity_rules_with_confidence(full_name: str) -> tuple[str, float]:
+    """
+    Classifies ethnicity with confidence score using rule-based patterns.
+    
+    Args:
+        full_name: The original full name string.
+        
+    Returns:
+        Tuple of (ethnicity, confidence_score)
+    """
+    if not full_name or not isinstance(full_name, str):
+        return "Uncertain", 0.0
+    
+    normalized = normalize_name(full_name)
+    
+    # Malaysian patterns (highest priority)
+    if is_malay(normalized):
+        return "Malay", RULE_BASED_CONFIDENCE["MALAY_PATRONYMIC"]
+    
+    if is_indian(normalized):
+        return "Indian", RULE_BASED_CONFIDENCE["INDIAN_PATRONYMIC"]
+    
+    if is_chinese(normalized, MALAYSIAN_CHINESE_SURNAMES):
+        return "Chinese", RULE_BASED_CONFIDENCE["CHINESE_SURNAME"]
+    
+    # Extended patterns for other Asian countries
+    myanmar_result = classify_myanmar(normalized)
+    if myanmar_result[0] and myanmar_result[1] >= MIN_CONFIDENCE_THRESHOLD:
+        return "Myanmar", myanmar_result[1]
+    
+    nepal_result = classify_nepal(normalized)
+    if nepal_result[0] and nepal_result[1] >= MIN_CONFIDENCE_THRESHOLD:
+        return "Nepal", nepal_result[1]
+    
+    bangladesh_result = classify_bangladesh(normalized)
+    if bangladesh_result[0] and bangladesh_result[1] >= MIN_CONFIDENCE_THRESHOLD:
+        return "Bangladesh", bangladesh_result[1]
+    
+    return "Uncertain", 0.0
+
 # Decorator for retrying the API call on specific exceptions
 # Retries 2 times after the first failure, waiting 2 seconds between attempts
 @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
-def classify_batch_ai(name_batch: List[str]) -> List[str]:
-    """Classifies a batch of names using a single OpenRouter API call via PydanticAI."""
+def classify_batch_ai(name_batch: List[str]) -> List[tuple[str, float]]:
+    """Classifies a batch of names using a single OpenRouter API call with confidence scores."""
     if not client:
         logging.error("AI Client not available. Skipping AI classification for batch.")
-        return ["Uncertain"] * len(name_batch) # Return 'Uncertain' for all names in the batch
+        return [("Uncertain", 0.0)] * len(name_batch)
 
     # Construct the prompt for batch processing
-    # Prepare names for the prompt, e.g., numbered list
     formatted_names = "\n".join([f"{i+1}. {name}" for i, name in enumerate(name_batch)])
-    # Corrected multi-line f-string definition
-    prompt = (
-        f"You are an expert in Malaysian Naming Conventions. Based on typical patterns, "
-        f"classify the likely ethnicity (Malay, Chinese, Indian, or Uncertain) for EACH name in the following list.\n"
-        f"Provide the result as a list of predictions, ensuring each prediction includes the original name and its corresponding ethnicity.\n"
-        f"The number of predictions in your response MUST match the number of names in the input list ({len(name_batch)} names).\n\n"
-        f"Input Names:\n{formatted_names}"
-    )
+    
+    prompt = dedent(f"""
+        You are an expert in Asian naming conventions. Classify each name's ethnicity with confidence score.
+
+        Ethnicities to identify:
+        - Malay: Malaysian Malay names (BIN/BINTI patterns)
+        - Chinese: Malaysian Chinese names  
+        - Indian: Malaysian Indian names (A/P, A/L, S/O, D/O patterns)
+        - Myanmar: Names from Myanmar/Burma
+        - Nepal: Names from Nepal
+        - Bangladesh: Names from Bangladesh
+        - Uncertain: Cannot determine with reasonable confidence
+
+        Provide confidence score (0.0-1.0):
+        - 1.0: Unmistakable patterns (e.g., BIN/BINTI for Malay)
+        - 0.8-0.99: Strong indicators with minimal ambiguity
+        - 0.6-0.79: Clear patterns but some uncertainty
+        - 0.4-0.59: Weak indicators, could be multiple ethnicities
+        - Below 0.4: Mark as "Uncertain"
+
+        Only assign an ethnicity if confidence >= 0.6, otherwise use "Uncertain".
+
+        Country-specific patterns to help identify:
+        
+        Myanmar patterns:
+        - No surnames, typically 1-3 words
+        - Honorifics: U (men), Daw (women), Saw
+        - Common elements: Aung, Win, Thant, Myat, Htun, Phyo, Kyaw
+        - Examples: "U Thant", "Aung San", "Daw Suu"
+
+        Nepal patterns:
+        - Caste-based surnames are very distinctive
+        - Brahmin: Sharma, Acharya, Paudel, Bhattarai
+        - Chhetri: Thapa, Khadka, Rana, Shah  
+        - Newar: Shrestha (very common), Maharjan, Pradhan
+        - Ethnic: Gurung, Tamang, Sherpa, Limbu
+        - Examples: "Ram Bahadur Thapa", "Sita Shrestha"
+
+        Bangladesh patterns:
+        - Islamic names predominant
+        - Common surnames: Rahman, Hossain, Islam, Ahmed, Khan
+        - Female markers: Khatun, Begum, Akter, Sultana
+        - Prefixes: Mohammad/Mohammed, MD, Abdul
+        - Examples: "Mohammad Rahman", "Fatima Khatun"
+    """)
+    
+    prompt += dedent(f"""
+        
+        The number of predictions in your response MUST match the number of names in the input list ({len(name_batch)} names).
+
+        Input Names:
+        {formatted_names}
+    """).strip()
 
     try:
         logging.info(f"Sending batch of {len(name_batch)} names to AI model {MODEL_NAME}...")
@@ -196,17 +380,13 @@ def classify_batch_ai(name_batch: List[str]) -> List[str]:
         # Validate response
         if len(response.predictions) != len(name_batch):
             logging.error(f"AI response length mismatch: Expected {len(name_batch)}, Got {len(response.predictions)}. Names: {name_batch}")
-            # Fallback: Return 'Uncertain' for all names in this batch
-            return ["Uncertain"] * len(name_batch)
+            return [("Uncertain", 0.0)] * len(name_batch)
 
-        # Extract ethnicities in the correct order (assuming AI respects the order)
-        # We could add a check here to match original_name if needed, but let's trust the AI for now
-        results = [pred.ethnicity for pred in response.predictions]
+        # Extract ethnicities and confidence scores
+        results = [(pred.ethnicity, pred.confidence) for pred in response.predictions]
         logging.info("Successfully received and parsed AI results for batch.")
         return results
 
     except Exception as e:
         logging.error(f"Error during AI batch classification for names {name_batch}: {e}")
-        # Exception might be raised by tenacity after retries fail
-        # Fallback: Return 'Uncertain' for all names in this batch
-        return ["Uncertain"] * len(name_batch)
+        return [("Uncertain", 0.0)] * len(name_batch)

@@ -1,8 +1,9 @@
 import pandas as pd
 import logging
 import argparse
-from config import BATCH_SIZE
-from classifiers import classify_ethnicity_rules, classify_batch_ai
+from config import BATCH_SIZE, MIN_CONFIDENCE_THRESHOLD
+from classifiers import classify_ethnicity_rules, classify_ethnicity_rules_with_confidence, classify_batch_ai
+from column_detector import detect_name_column
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -53,65 +54,84 @@ def save_csv(dataframe: pd.DataFrame, filepath: str):
             f"An unexpected error occurred while saving to {filepath}: {e}"
         )
 
-def main(input_file, output_file):
+def main(input_file, output_file, manual_column=None):
     logging.info(f"Starting classification process for {input_file}")
 
     df = load_csv(input_file)
     if df is None:
         return # Exit if loading failed
 
-    if 'fullName' not in df.columns:
-        logging.error(f"'fullName' column not found in {input_file}")
+    # --- Phase 1: Intelligent Column Detection ---
+    try:
+        detection_result = detect_name_column(df, manual_column)
+        name_column = detection_result.detected_column
+        logging.info(f"Phase 1: Detected name column '{name_column}' (confidence: {detection_result.confidence_score:.2f})")
+        logging.info(f"Detection reasoning: {detection_result.reasoning}")
+    except Exception as e:
+        logging.error(f"Failed to detect name column: {e}")
         return
 
-    # --- Phase 2: Apply Rule-Based Classifier ---
-    logging.info("Applying rule-based classification...")
-    # Apply rule-based classification
-    # Pass only the name, as classify_ethnicity_rules uses the imported surname list internally
-    df['ethnicity'] = df['fullName'].apply(lambda name: classify_ethnicity_rules(name))
-    logging.info("Rule-based classification complete.")
-    logging.info(f"Results distribution after rules:\n{df['ethnicity'].value_counts()}")
+    # --- Phase 2: Rule-Based Classification (Malaysian + Extended Countries) ---
+    logging.info("Phase 2: Applying rule-based classification with confidence scoring...")
+    
+    # Add confidence column
+    df['confidence'] = 0.0
+    
+    # Apply rule-based classification with confidence
+    for idx, row in df.iterrows():
+        name = row[name_column]
+        ethnicity, confidence = classify_ethnicity_rules_with_confidence(name)
+        df.loc[idx, 'ethnicity'] = ethnicity
+        df.loc[idx, 'confidence'] = confidence
+    
+    logging.info("Phase 2 complete.")
+    logging.info(f"Results distribution after rule-based classification:\n{df['ethnicity'].value_counts()}")
+    logging.info(f"Average confidence: {df['confidence'].mean():.2f}")
+    logging.info(f"High confidence (≥0.8): {(df['confidence'] >= 0.8).sum()}")
+    logging.info(f"Medium confidence (0.6-0.8): {((df['confidence'] >= 0.6) & (df['confidence'] < 0.8)).sum()}")
+    logging.info(f"Low confidence (<0.6): {(df['confidence'] < 0.6).sum()}")
 
-    # --- Phase 3: AI Classification for Uncertain Cases ---
-    uncertain_mask = df['ethnicity'] == 'Uncertain'
-    uncertain_indices = df.index[uncertain_mask]
-    uncertain_names = df.loc[uncertain_mask, 'fullName'].tolist()
+    # --- Phase 3: AI Classification for Uncertain/Low-Confidence Cases ---
+    uncertain_or_low_conf_mask = (df['ethnicity'] == 'Uncertain') | (df['confidence'] < MIN_CONFIDENCE_THRESHOLD)
+    uncertain_indices = df.index[uncertain_or_low_conf_mask]
+    uncertain_names = df.loc[uncertain_or_low_conf_mask, name_column].tolist()
 
     if not uncertain_names:
-        logging.info("No names marked as 'Uncertain'. Skipping AI classification.")
+        logging.info("No names marked as 'Uncertain' or low confidence. Skipping AI classification.")
     else:
-        logging.info(f"Found {len(uncertain_names)} names marked as 'Uncertain'. Starting AI classification in batches of {BATCH_SIZE}...")
+        logging.info(f"Phase 3: Found {len(uncertain_names)} names marked as 'Uncertain' or low confidence. Starting AI classification in batches of {BATCH_SIZE}...")
 
-        ai_results = []
         for i in range(0, len(uncertain_names), BATCH_SIZE):
             batch_names = uncertain_names[i:i + BATCH_SIZE]
             logging.info(f"Processing AI batch {i // BATCH_SIZE + 1} ({len(batch_names)} names)")
             batch_results = classify_batch_ai(batch_names)
-            ai_results.extend(batch_results)
 
-            # --- Frequent Save Logic (Phase 4) ---
             # Update the portion of the DataFrame processed in this batch
             if len(batch_results) == len(batch_names):
                 current_indices = uncertain_indices[i:i + len(batch_names)]
-                df.loc[current_indices, 'ethnicity'] = batch_results
-                logging.debug(f"Updated DataFrame for batch {i // BATCH_SIZE + 1}. Saving intermediate results.")
-                save_csv(df, output_file) # Save after each batch
+                for j, (ethnicity, confidence) in enumerate(batch_results):
+                    idx = current_indices[j]
+                    df.loc[idx, 'ethnicity'] = ethnicity
+                    df.loc[idx, 'confidence'] = confidence
+                
+                logging.info(f"Updated DataFrame for batch {i // BATCH_SIZE + 1}. Saving intermediate results.")
+                save_csv(df, output_file)
             else:
-                logging.warning(f"AI results length mismatch for batch {i // BATCH_SIZE + 1}. Expected {len(batch_names)}, got {len(batch_results)}. Skipping update and save for this batch.")
+                logging.warning(f"AI results length mismatch for batch {i // BATCH_SIZE + 1}. Expected {len(batch_names)}, got {len(batch_results)}. Skipping update for this batch.")
 
-        # --- Final Verification & Logging (Optional but good practice) ---
-        final_ai_processed_count = len(ai_results)
-        if final_ai_processed_count == len(uncertain_indices):
-            # Final check: Ensure all uncertain indices were intended to be updated (even if some batches failed individually and weren't updated)
-            logging.info(f"AI classification phase complete. Processed {final_ai_processed_count} uncertain names.")
-            logging.info(f"Final results distribution after AI classification:\n{df['ethnicity'].value_counts()}")
-        else:
-            # Log error if the total counts don't match after the loop
-            logging.error(f"Mismatch between total expected AI results ({len(uncertain_indices)}) and total results received ({final_ai_processed_count}) across all batches. Final output might be incomplete.")
+        logging.info("Phase 3 complete.")
+        logging.info(f"Final results distribution after AI classification:\n{df['ethnicity'].value_counts()}")
 
-        # --- Save Final Results (Redundant if saving after every batch, but safe) ---
-        logging.info(f"Ensuring final results are saved to {output_file}")
-        save_csv(df, output_file)
+    # --- Final Statistics ---
+    logging.info("Classification complete:")
+    logging.info(f"  High confidence (≥0.8): {(df['confidence'] >= 0.8).sum()}")
+    logging.info(f"  Medium confidence (0.6-0.8): {((df['confidence'] >= 0.6) & (df['confidence'] < 0.8)).sum()}")
+    logging.info(f"  Low confidence (<0.6): {(df['confidence'] < 0.6).sum()}")
+    logging.info(f"  Average confidence: {df['confidence'].mean():.3f}")
+
+    # --- Save Final Results ---
+    logging.info(f"Ensuring final results are saved to {output_file}")
+    save_csv(df, output_file)
     
     # --- Save Final Results (always save, regardless of AI processing) ---
     logging.info(f"Saving final results to {output_file}")
@@ -122,6 +142,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Classify Malaysian names by ethnicity.")
     parser.add_argument("-i", "--input", required=True, help="Path to the input CSV file.")
     parser.add_argument("-o", "--output", required=True, help="Path to the output CSV file.")
+    parser.add_argument("-c", "--column", help="Manually specify the name column (overrides automatic detection).")
     args = parser.parse_args()
 
-    main(args.input, args.output)
+    main(args.input, args.output, args.column)
